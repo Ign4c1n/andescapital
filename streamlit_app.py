@@ -579,8 +579,14 @@ def style_return(value: float) -> str:
 
 
 def render_table_html(df: pd.DataFrame) -> None:
+    required_cols = ["Activo", "Ticker", "Empresa", "Precio", "Retorno 20D", "RSI 14", "Volatilidad 20D", "Señal", "Clase", "Lectura"]
+    missing_cols = [col for col in required_cols if col not in df.columns]
     if df.empty:
         st.info("No hay activos para mostrar.")
+        return
+    if missing_cols:
+        st.error("El radar no pudo construir la tabla porque faltan columnas: " + ", ".join(missing_cols))
+        st.dataframe(df, use_container_width=True)
         return
 
     html = """
@@ -633,6 +639,7 @@ if "selected_ticker" not in st.session_state:
 
 def set_page(page: str):
     st.session_state.page = page
+    st.rerun()
 
 
 def set_ticker(ticker: str):
@@ -767,7 +774,6 @@ def page_radar():
         render_table_html(asset_df.head(7))
         if st.button("Ver radar de activos completo", use_container_width=True):
             set_page("Radar de activos")
-            st.rerun()
         st.markdown("</div>", unsafe_allow_html=True)
 
     with c2:
@@ -815,6 +821,7 @@ def market_preview():
 
 def page_radar_activos():
     st.markdown('<div class="panel"><h2>Radar de activos</h2><div class="small-red-line"></div>', unsafe_allow_html=True)
+    st.caption("Sección activa: Radar de activos")
     st.markdown(
         """
 <div class="warning-box">
