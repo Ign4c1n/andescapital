@@ -377,6 +377,53 @@ div[data-testid="stMetricLabel"] { color:#d9e4f5; }
   margin-top:.35rem;
 }
 
+
+.detail-card {
+  background:rgba(255,255,255,.045);
+  border:1px solid var(--line);
+  border-radius:12px;
+  padding:1.05rem 1.15rem;
+  margin:.75rem 0;
+}
+.detail-card h3 {
+  margin:.15rem 0 .45rem 0;
+  color:white;
+}
+.detail-grid {
+  display:grid;
+  grid-template-columns:repeat(4, minmax(0,1fr));
+  gap:.75rem;
+  margin:.8rem 0 1rem 0;
+}
+.detail-metric {
+  background:rgba(255,255,255,.04);
+  border:1px solid rgba(255,255,255,.08);
+  border-radius:10px;
+  padding:.8rem;
+}
+.detail-metric span {
+  display:block;
+  color:#9fb0ca;
+  font-size:.72rem;
+  text-transform:uppercase;
+  letter-spacing:.08em;
+  font-weight:850;
+}
+.detail-metric strong {
+  display:block;
+  color:white;
+  font-size:1.08rem;
+  margin-top:.25rem;
+}
+.reason-box {
+  border:1px solid rgba(91,141,255,.32);
+  background:rgba(91,141,255,.08);
+  color:#dfeaff;
+  padding:.95rem 1rem;
+  border-radius:10px;
+  line-height:1.5;
+}
+
 </style>
 """,
     unsafe_allow_html=True,
@@ -698,6 +745,12 @@ if "page" not in st.session_state:
 if "selected_ticker" not in st.session_state:
     st.session_state.selected_ticker = "SQM-B.SN"
 
+if "selected_signal_filter" not in st.session_state:
+    st.session_state.selected_signal_filter = None
+
+if "selected_company_detail" not in st.session_state:
+    st.session_state.selected_company_detail = None
+
 
 def set_page(page: str):
     st.session_state.page = page
@@ -764,6 +817,119 @@ period = nav_cols[6].selectbox(
 with st.spinner("Cargando datos reales de mercado..."):
     asset_df = build_asset_table(DEFAULT_ASSETS, period=period)
 
+
+
+
+def signal_label(signal: str) -> str:
+    labels = {
+        "ALZA": "🟢 Favorable",
+        "VIGILAR": "🟡 Vigilar",
+        "RIESGO": "🔴 Riesgo",
+        "SIN DATOS": "⚪ Sin datos",
+    }
+    return labels.get(signal, "⚪ Sin datos")
+
+
+def set_signal_filter(signal: str):
+    st.session_state.selected_signal_filter = signal
+    st.session_state.selected_company_detail = None
+    st.rerun()
+
+
+def set_company_detail(ticker: str):
+    st.session_state.selected_company_detail = ticker
+    st.rerun()
+
+
+def render_company_detail(row: pd.Series):
+    ticker = row["Ticker"]
+    signal = row["Señal"]
+    css = row.get("Clase", "sin-datos")
+    chart_df = add_indicators(download_price_history(ticker, period=period))
+
+    st.markdown(
+        f"""
+<div class="detail-card">
+  <h3>{signal_label(signal)} · {row['Activo']}</h3>
+  <div style="color:#aebdd4; font-size:.9rem;">{row['Empresa']} · {ticker}</div>
+  <div class="detail-grid">
+    <div class="detail-metric"><span>Precio</span><strong>{fmt_money(row['Precio'])}</strong></div>
+    <div class="detail-metric"><span>Retorno 20D</span><strong>{fmt_pct(row['Retorno 20D'])}</strong></div>
+    <div class="detail-metric"><span>RSI 14</span><strong>{fmt_num(row['RSI 14'])}</strong></div>
+    <div class="detail-metric"><span>Volatilidad 20D</span><strong>{fmt_pct(row['Volatilidad 20D'])}</strong></div>
+  </div>
+  <div class="reason-box"><b>¿Por qué está en esta condición?</b><br>{row['Lectura']}</div>
+</div>
+""",
+        unsafe_allow_html=True,
+    )
+
+    if not chart_df.empty:
+        st.plotly_chart(make_chart(chart_df, f"{ticker} · soporte visual de la condición"), use_container_width=True)
+    else:
+        st.info("No hay datos suficientes para graficar este activo.")
+
+
+def render_interactive_semaforo(df: pd.DataFrame):
+    if df.empty or "Señal" not in df.columns:
+        st.info("No hay información suficiente para construir el semáforo interactivo.")
+        return
+
+    st.markdown("### Semáforo interactivo")
+    st.caption("Pincha una condición para ver las empresas clasificadas ahí. Luego pincha una empresa para ver la explicación.")
+
+    counts = {
+        "ALZA": int((df["Señal"] == "ALZA").sum()),
+        "VIGILAR": int((df["Señal"] == "VIGILAR").sum()),
+        "RIESGO": int((df["Señal"] == "RIESGO").sum()),
+        "SIN DATOS": int((df["Señal"] == "SIN DATOS").sum()),
+    }
+
+    c1, c2, c3, c4 = st.columns(4)
+    button_map = [
+        (c1, "ALZA", f"🟢 Favorable ({counts['ALZA']})"),
+        (c2, "VIGILAR", f"🟡 Vigilar ({counts['VIGILAR']})"),
+        (c3, "RIESGO", f"🔴 Riesgo ({counts['RIESGO']})"),
+        (c4, "SIN DATOS", f"⚪ Sin datos ({counts['SIN DATOS']})"),
+    ]
+
+    for col, signal, label in button_map:
+        with col:
+            if st.button(label, use_container_width=True, key=f"filter_{signal}"):
+                set_signal_filter(signal)
+
+    selected = st.session_state.selected_signal_filter
+
+    if not selected:
+        st.markdown(
+            """
+<div class="info-box">
+Selecciona un color del semáforo para desplegar las empresas clasificadas en esa condición.
+</div>
+""",
+            unsafe_allow_html=True,
+        )
+        return
+
+    subset = df[df["Señal"] == selected].copy()
+
+    st.markdown(f"#### {signal_label(selected)}")
+    if subset.empty:
+        st.info("No hay empresas en esta condición.")
+        return
+
+    company_cols = st.columns(3)
+    for i, (_, row) in enumerate(subset.iterrows()):
+        with company_cols[i % 3]:
+            label = f"{row['Activo']} · {fmt_pct(row['Retorno 20D'])}"
+            if st.button(label, use_container_width=True, key=f"company_{selected}_{row['Ticker']}"):
+                set_company_detail(row["Ticker"])
+
+    chosen = st.session_state.selected_company_detail
+    if chosen:
+        detail_rows = df[df["Ticker"] == chosen]
+        if not detail_rows.empty:
+            render_company_detail(detail_rows.iloc[0])
 
 
 def render_semaforo_summary(df: pd.DataFrame) -> None:
@@ -926,6 +1092,8 @@ No es una recomendación de inversión ni garantiza resultados futuros.
     )
 
     render_semaforo_summary(asset_df)
+    st.markdown("")
+    render_interactive_semaforo(asset_df)
     st.markdown("")
     search = st.text_input("Buscar activo", placeholder="Ej: SQM, COPEC, CHILE, CENCOSUD...")
     filtered = asset_df.copy()
