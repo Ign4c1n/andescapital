@@ -579,51 +579,59 @@ def style_return(value: float) -> str:
 
 
 def render_table_html(df: pd.DataFrame) -> None:
-    required_cols = ["Activo", "Ticker", "Empresa", "Precio", "Retorno 20D", "RSI 14", "Volatilidad 20D", "Señal", "Clase", "Lectura"]
-    missing_cols = [col for col in required_cols if col not in df.columns]
+    """Render estable del radar usando tabla nativa de Streamlit.
+
+    Evita que Streamlit muestre HTML crudo como texto en la app publicada.
+    """
+    required_cols = [
+        "Activo", "Ticker", "Empresa", "Precio", "Retorno 20D",
+        "RSI 14", "Volatilidad 20D", "Señal", "Lectura"
+    ]
+
     if df.empty:
         st.info("No hay activos para mostrar.")
         return
+
+    missing_cols = [col for col in required_cols if col not in df.columns]
     if missing_cols:
         st.error("El radar no pudo construir la tabla porque faltan columnas: " + ", ".join(missing_cols))
-        st.dataframe(df, use_container_width=True)
+        st.dataframe(df, use_container_width=True, hide_index=True)
         return
 
-    html = """
-    <div class="dataframe-container">
-    <table style="width:100%; border-collapse:collapse;">
-      <thead>
-        <tr style="background:rgba(255,255,255,.04);">
-          <th style="text-align:left; padding:13px 14px; color:#9fb0ca; font-size:12px;">Activo</th>
-          <th style="text-align:left; padding:13px 14px; color:#9fb0ca; font-size:12px;">Precio</th>
-          <th style="text-align:left; padding:13px 14px; color:#9fb0ca; font-size:12px;">20D</th>
-          <th style="text-align:left; padding:13px 14px; color:#9fb0ca; font-size:12px;">RSI</th>
-          <th style="text-align:left; padding:13px 14px; color:#9fb0ca; font-size:12px;">Volatilidad</th>
-          <th style="text-align:left; padding:13px 14px; color:#9fb0ca; font-size:12px;">Señal</th>
-          <th style="text-align:left; padding:13px 14px; color:#9fb0ca; font-size:12px;">Lectura</th>
-        </tr>
-      </thead>
-      <tbody>
-    """
+    view = df.copy()
 
-    for _, row in df.iterrows():
-        html += f"""
-        <tr style="border-top:1px solid rgba(255,255,255,.08);">
-          <td style="padding:13px 14px;">
-            <div style="font-weight:800; color:#fff;">{row['Activo']}</div>
-            <div style="font-size:12px; color:#aebdd4;">{row['Empresa']} · {row['Ticker']}</div>
-          </td>
-          <td style="padding:13px 14px; color:#fff;">{fmt_money(row['Precio'])}</td>
-          <td style="padding:13px 14px;">{style_return(row['Retorno 20D'])}</td>
-          <td style="padding:13px 14px; color:#fff;">{fmt_num(row['RSI 14'])}</td>
-          <td style="padding:13px 14px; color:#fff;">{fmt_pct(row['Volatilidad 20D'])}</td>
-          <td style="padding:13px 14px;">{signal_badge(row['Señal'], row['Clase'])}</td>
-          <td style="padding:13px 14px; color:#d7e2f3; font-size:13px;">{row['Lectura']}</td>
-        </tr>
-        """
+    view["Activo"] = view["Activo"].astype(str) + " · " + view["Ticker"].astype(str)
+    view["Precio"] = view["Precio"].apply(fmt_money)
+    view["20D"] = view["Retorno 20D"].apply(fmt_pct)
+    view["RSI"] = view["RSI 14"].apply(fmt_num)
+    view["Volatilidad"] = view["Volatilidad 20D"].apply(fmt_pct)
 
-    html += "</tbody></table></div>"
-    st.markdown(html, unsafe_allow_html=True)
+    view = view[[
+        "Activo",
+        "Empresa",
+        "Precio",
+        "20D",
+        "RSI",
+        "Volatilidad",
+        "Señal",
+        "Lectura",
+    ]]
+
+    st.dataframe(
+        view,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Activo": st.column_config.TextColumn("Activo", width="medium"),
+            "Empresa": st.column_config.TextColumn("Empresa", width="large"),
+            "Precio": st.column_config.TextColumn("Precio", width="small"),
+            "20D": st.column_config.TextColumn("20D", width="small"),
+            "RSI": st.column_config.TextColumn("RSI", width="small"),
+            "Volatilidad": st.column_config.TextColumn("Volatilidad", width="small"),
+            "Señal": st.column_config.TextColumn("Señal", width="small"),
+            "Lectura": st.column_config.TextColumn("Lectura", width="large"),
+        },
+    )
 
 
 # =========================================================
@@ -639,6 +647,7 @@ if "selected_ticker" not in st.session_state:
 
 def set_page(page: str):
     st.session_state.page = page
+    st.rerun()
     st.rerun()
 
 
