@@ -1,7 +1,10 @@
 
 import base64
+import json
 from datetime import datetime
 from pathlib import Path
+from urllib.request import urlopen, Request
+from urllib.error import URLError, HTTPError
 
 import numpy as np
 import pandas as pd
@@ -424,6 +427,64 @@ div[data-testid="stMetricLabel"] { color:#d9e4f5; }
   line-height:1.5;
 }
 
+
+.market-section-title {
+  font-size:1.35rem;
+  font-weight:900;
+  color:white;
+  margin:1.2rem 0 .75rem 0;
+}
+.market-card-grid {
+  display:grid;
+  grid-template-columns:repeat(4, minmax(0,1fr));
+  gap:.85rem;
+  margin-bottom:1rem;
+}
+.market-info-card {
+  background:rgba(255,255,255,.045);
+  border:1px solid var(--line);
+  border-radius:12px;
+  padding:1rem 1.1rem;
+  min-height:118px;
+}
+.market-info-card .card-label {
+  color:#9fb0ca;
+  font-size:.72rem;
+  text-transform:uppercase;
+  letter-spacing:.08em;
+  font-weight:850;
+}
+.market-info-card .card-value {
+  color:white;
+  font-size:1.55rem;
+  line-height:1.1;
+  font-weight:900;
+  margin-top:.45rem;
+}
+.market-info-card .card-note {
+  color:#d7e2f3;
+  font-size:.82rem;
+  line-height:1.35;
+  margin-top:.5rem;
+}
+.market-info-card .card-date {
+  color:#8092ad;
+  font-size:.75rem;
+  margin-top:.45rem;
+}
+.market-row-grid {
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:1rem;
+}
+@media(max-width:1100px) {
+  .market-card-grid { grid-template-columns:repeat(2, minmax(0,1fr)); }
+  .market-row-grid { grid-template-columns:1fr; }
+}
+@media(max-width:700px) {
+  .market-card-grid { grid-template-columns:1fr; }
+}
+
 </style>
 """,
     unsafe_allow_html=True,
@@ -433,6 +494,74 @@ div[data-testid="stMetricLabel"] { color:#d9e4f5; }
 # =========================================================
 # DATA
 # =========================================================
+
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def fetch_mindicador_summary() -> dict:
+    """Obtiene resumen de indicadores económicos desde mindicador.cl."""
+    try:
+        req = Request(
+            "https://mindicador.cl/api",
+            headers={"User-Agent": "AndesCapitalRadar/1.0"}
+        )
+        with urlopen(req, timeout=12) as response:
+            payload = response.read().decode("utf-8")
+        return json.loads(payload)
+    except Exception:
+        return {}
+
+
+def indicator_value(data: dict, code: str):
+    item = data.get(code, {}) if isinstance(data, dict) else {}
+    return item.get("valor"), item.get("fecha"), item.get("unidad_medida"), item.get("nombre")
+
+
+def fmt_indicator(value, unit: str | None = None) -> str:
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return "—"
+    if unit == "Porcentaje":
+        return f"{float(value):,.2f}%".replace(",", "X").replace(".", ",").replace("X", ".")
+    if unit == "Dólar":
+        return f"US$ {float(value):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    return f"$ {float(value):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def fmt_date_from_api(date_str) -> str:
+    if not date_str:
+        return "Sin fecha"
+    try:
+        return pd.to_datetime(date_str).strftime("%d-%m-%Y")
+    except Exception:
+        return str(date_str)[:10]
+
+
+def render_market_card(label: str, value: str, note: str = "", date: str = ""):
+    st.markdown(
+        f"""
+<div class="market-info-card">
+  <div class="card-label">{label}</div>
+  <div class="card-value">{value}</div>
+  <div class="card-note">{note}</div>
+  <div class="card-date">{date}</div>
+</div>
+""",
+        unsafe_allow_html=True,
+    )
+
+
+def market_snapshot_for_ticker(ticker: str, period_for_snapshot: str = "3mo") -> dict:
+    df = add_indicators(download_price_history(ticker, period=period_for_snapshot))
+    if df.empty:
+        return {"last": "—", "ret20": "—", "signal": "SIN DATOS", "date": "Sin fecha"}
+    last = df.iloc[-1]
+    signal, _, _ = classify_signal(last)
+    return {
+        "last": fmt_money(last.get("Close")),
+        "ret20": fmt_pct(last.get("Retorno 20D")),
+        "signal": signal,
+        "date": df.index[-1].strftime("%d-%m-%Y"),
+    }
+
 
 @st.cache_data(ttl=900, show_spinner=False)
 def download_price_history(ticker: str, period: str = "1y") -> pd.DataFrame:
@@ -1223,49 +1352,126 @@ def page_mercado():
     st.markdown(
         """
 <div class="warning-box">
-Resumen de mercado con instrumentos disponibles en Yahoo Finance. Algunas series chilenas pueden no estar disponibles o venir con rezago.
+Panel de contexto macro y mercado. Los datos se obtienen desde fuentes públicas disponibles para la app.
+Pueden existir rezagos, diferencias de horario o valores no disponibles según la fuente.
 </div>
 """,
         unsafe_allow_html=True,
     )
 
-    rows = []
-    for item in MARKET_INDEXES:
-        df = add_indicators(download_price_history(item["ticker"], period=period))
-        if df.empty:
-            rows.append({
-                "Mercado": item["name"],
-                "Ticker": item["ticker"],
-                "Último": "—",
-                "20D": "—",
-                "60D": "—",
-                "RSI": "—",
-                "Señal": "SIN DATOS",
-            })
-            continue
+    macro = fetch_mindicador_summary()
 
-        last = df.iloc[-1]
-        signal, _, reason = classify_signal(last)
-        rows.append({
-            "Mercado": item["name"],
+    st.markdown('<div class="market-section-title">Indicadores Chile</div>', unsafe_allow_html=True)
+    c1, c2, c3, c4 = st.columns(4)
+
+    uf_v, uf_f, uf_u, _ = indicator_value(macro, "uf")
+    utm_v, utm_f, utm_u, _ = indicator_value(macro, "utm")
+    ipc_v, ipc_f, ipc_u, _ = indicator_value(macro, "ipc")
+    tpm_v, tpm_f, tpm_u, _ = indicator_value(macro, "tpm")
+
+    with c1:
+        render_market_card("UF", fmt_indicator(uf_v, uf_u), "Unidad de Fomento", fmt_date_from_api(uf_f))
+    with c2:
+        render_market_card("UTM", fmt_indicator(utm_v, utm_u), "Unidad Tributaria Mensual", fmt_date_from_api(utm_f))
+    with c3:
+        uta = float(utm_v) * 12 if utm_v is not None else None
+        render_market_card("UTA", fmt_indicator(uta, utm_u), "Calculada como UTM × 12", fmt_date_from_api(utm_f))
+    with c4:
+        render_market_card("IPC", fmt_indicator(ipc_v, ipc_u), "Variación mensual informada", fmt_date_from_api(ipc_f))
+
+    c5, c6, c7, c8 = st.columns(4)
+    imacec_v, imacec_f, imacec_u, _ = indicator_value(macro, "imacec")
+    desempleo_v, desempleo_f, desempleo_u, _ = indicator_value(macro, "tasa_desempleo")
+    ivp_v, ivp_f, ivp_u, _ = indicator_value(macro, "ivp")
+    with c5:
+        render_market_card("TPM", fmt_indicator(tpm_v, tpm_u), "Tasa de Política Monetaria", fmt_date_from_api(tpm_f))
+    with c6:
+        render_market_card("IMACEC", fmt_indicator(imacec_v, imacec_u), "Actividad económica", fmt_date_from_api(imacec_f))
+    with c7:
+        render_market_card("Desempleo", fmt_indicator(desempleo_v, desempleo_u), "Tasa de desempleo", fmt_date_from_api(desempleo_f))
+    with c8:
+        render_market_card("IVP", fmt_indicator(ivp_v, ivp_u), "Índice de Valor Promedio", fmt_date_from_api(ivp_f))
+
+    st.markdown('<div class="market-section-title">Tipo de cambio</div>', unsafe_allow_html=True)
+    fx1, fx2, fx3, fx4 = st.columns(4)
+    dolar_v, dolar_f, dolar_u, _ = indicator_value(macro, "dolar")
+    dolar_int_v, dolar_int_f, dolar_int_u, _ = indicator_value(macro, "dolar_intercambio")
+    euro_v, euro_f, euro_u, _ = indicator_value(macro, "euro")
+    usdclp = market_snapshot_for_ticker("CLP=X", "3mo")
+
+    with fx1:
+        render_market_card("Dólar observado", fmt_indicator(dolar_v, dolar_u), "Fuente macro Chile", fmt_date_from_api(dolar_f))
+    with fx2:
+        render_market_card("Dólar intercambio", fmt_indicator(dolar_int_v, dolar_int_u), "Referencia informada", fmt_date_from_api(dolar_int_f))
+    with fx3:
+        render_market_card("Euro", fmt_indicator(euro_v, euro_u), "Euro en pesos", fmt_date_from_api(euro_f))
+    with fx4:
+        render_market_card("USD/CLP mercado", usdclp["last"], f"20D: {usdclp['ret20']} · {usdclp['signal']}", usdclp["date"])
+
+    st.markdown('<div class="market-section-title">Commodities</div>', unsafe_allow_html=True)
+    co1, co2, co3, co4 = st.columns(4)
+    copper_api_v, copper_api_f, copper_api_u, _ = indicator_value(macro, "libra_cobre")
+    copper_f = market_snapshot_for_ticker("HG=F", "3mo")
+    brent = market_snapshot_for_ticker("BZ=F", "3mo")
+    gold = market_snapshot_for_ticker("GC=F", "3mo")
+
+    with co1:
+        render_market_card("Libra de cobre", fmt_indicator(copper_api_v, copper_api_u), "Indicador Chile", fmt_date_from_api(copper_api_f))
+    with co2:
+        render_market_card("Cobre futuro", copper_f["last"], f"20D: {copper_f['ret20']} · {copper_f['signal']}", copper_f["date"])
+    with co3:
+        render_market_card("Brent", brent["last"], f"20D: {brent['ret20']} · {brent['signal']}", brent["date"])
+    with co4:
+        render_market_card("Oro", gold["last"], f"20D: {gold['ret20']} · {gold['signal']}", gold["date"])
+
+    st.markdown('<div class="market-section-title">Índices y referencias internacionales</div>', unsafe_allow_html=True)
+    idx_rows = []
+    for item in [
+        {"ticker": "^GSPC", "name": "S&P 500"},
+        {"ticker": "^DJI", "name": "Dow Jones"},
+        {"ticker": "^IXIC", "name": "Nasdaq"},
+        {"ticker": "^RUT", "name": "Russell 2000"},
+        {"ticker": "EEM", "name": "Emergentes ETF"},
+        {"ticker": "ECH", "name": "Chile ETF"},
+    ]:
+        snap = market_snapshot_for_ticker(item["ticker"], "6mo")
+        idx_rows.append({
+            "Indicador": item["name"],
             "Ticker": item["ticker"],
-            "Último": fmt_money(last["Close"]),
-            "20D": fmt_pct(last.get("Retorno 20D")),
-            "60D": fmt_pct(last.get("Retorno 60D")),
-            "RSI": fmt_num(last.get("RSI14")),
-            "Señal": signal,
-            "Lectura": reason,
+            "Último": snap["last"],
+            "20D": snap["ret20"],
+            "Señal": snap["signal"],
+            "Fecha": snap["date"],
         })
 
-    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+    st.dataframe(pd.DataFrame(idx_rows), use_container_width=True, hide_index=True)
 
-    selected_market = st.selectbox(
-        "Ver gráfico de mercado",
-        options=[item["ticker"] for item in MARKET_INDEXES],
-        format_func=lambda t: f"{next((x['name'] for x in MARKET_INDEXES if x['ticker'] == t), t)} · {t}",
-    )
+    st.markdown('<div class="market-section-title">Gráfico detallado</div>', unsafe_allow_html=True)
+    graph_options = {
+        "S&P 500": "^GSPC",
+        "Dow Jones": "^DJI",
+        "Nasdaq": "^IXIC",
+        "USD/CLP": "CLP=X",
+        "Cobre futuro": "HG=F",
+        "Brent": "BZ=F",
+        "Oro": "GC=F",
+        "Chile ETF": "ECH",
+    }
+    selected_label = st.selectbox("Selecciona indicador para graficar", list(graph_options.keys()))
+    selected_market = graph_options[selected_label]
     chart_df = add_indicators(download_price_history(selected_market, period=period))
-    st.plotly_chart(make_chart(chart_df, f"{selected_market} · Mercado"), use_container_width=True)
+    st.plotly_chart(make_chart(chart_df, f"{selected_label} · {selected_market}"), use_container_width=True)
+
+    st.markdown(
+        """
+<div class="info-box">
+Fuente macro: integración pública vía mindicador.cl, que entrega indicadores económicos en formato API.
+Algunos valores provienen originalmente de series oficiales publicadas por organismos chilenos. Para uso profesional,
+conviene validar contra la fuente oficial correspondiente antes de tomar decisiones.
+</div>
+""",
+        unsafe_allow_html=True,
+    )
 
     st.markdown("</div>", unsafe_allow_html=True)
 
