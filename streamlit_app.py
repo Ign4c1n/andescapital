@@ -35,10 +35,29 @@ DEFAULT_ASSETS = [
     {"ticker": "CENCOSUD.SN", "name": "CENCOSUD", "company": "Cencosud S.A."},
     {"ticker": "CHILE.SN", "name": "CHILE", "company": "Banco de Chile"},
     {"ticker": "BSANTANDER.SN", "name": "BSANTANDER", "company": "Banco Santander Chile"},
-    {"ticker": "ENELCHILE.SN", "name": "ENELCHILE", "company": "Enel Chile S.A."},
-    {"ticker": "CMPC.SN", "name": "CMPC", "company": "Empresas CMPC S.A."},
     {"ticker": "BCI.SN", "name": "BCI", "company": "Banco de Crédito e Inversiones"},
+    {"ticker": "ITAUCL.SN", "name": "ITAUCL", "company": "Itaú Chile"},
+    {"ticker": "ENELCHILE.SN", "name": "ENELCHILE", "company": "Enel Chile S.A."},
+    {"ticker": "ENELAM.SN", "name": "ENELAM", "company": "Enel Américas S.A."},
+    {"ticker": "COLBUN.SN", "name": "COLBUN", "company": "Colbún S.A."},
+    {"ticker": "ENGIE.SN", "name": "ENGIE", "company": "Engie Energía Chile S.A."},
+    {"ticker": "CMPC.SN", "name": "CMPC", "company": "Empresas CMPC S.A."},
+    {"ticker": "CAP.SN", "name": "CAP", "company": "CAP S.A."},
     {"ticker": "VAPORES.SN", "name": "VAPORES", "company": "Compañía Sud Americana de Vapores"},
+    {"ticker": "SONDA.SN", "name": "SONDA", "company": "Sonda S.A."},
+    {"ticker": "ENTEL.SN", "name": "ENTEL", "company": "Empresa Nacional de Telecomunicaciones"},
+    {"ticker": "ANDINA-B.SN", "name": "ANDINA-B", "company": "Embotelladora Andina S.A."},
+    {"ticker": "CCU.SN", "name": "CCU", "company": "Compañía Cervecerías Unidas"},
+    {"ticker": "CONCHATORO.SN", "name": "CONCHATORO", "company": "Viña Concha y Toro S.A."},
+    {"ticker": "ILC.SN", "name": "ILC", "company": "Inversiones La Construcción S.A."},
+    {"ticker": "MALLPLAZA.SN", "name": "MALLPLAZA", "company": "Plaza S.A."},
+    {"ticker": "PARAUCO.SN", "name": "PARAUCO", "company": "Parque Arauco S.A."},
+    {"ticker": "CENCOSHOPP.SN", "name": "CENCOSHOPP", "company": "Cencosud Shopping S.A."},
+    {"ticker": "RIPLEY.SN", "name": "RIPLEY", "company": "Ripley Corp S.A."},
+    {"ticker": "SMU.SN", "name": "SMU", "company": "SMU S.A."},
+    {"ticker": "SALFACORP.SN", "name": "SALFACORP", "company": "Salfacorp S.A."},
+    {"ticker": "SECURITY.SN", "name": "SECURITY", "company": "Grupo Security S.A."},
+    {"ticker": "LTM.SN", "name": "LTM", "company": "LATAM Airlines Group S.A."},
 ]
 
 MARKET_INDEXES = [
@@ -338,6 +357,26 @@ div[data-testid="stMetric"] {
 
 div[data-testid="stMetricValue"] { color:white; }
 div[data-testid="stMetricLabel"] { color:#d9e4f5; }
+
+.semaforo-card {
+  min-height:96px;
+  background:rgba(255,255,255,.04);
+  border:1px solid var(--line);
+  border-radius:12px;
+  padding:1rem;
+}
+.semaforo-title {
+  font-weight:900;
+  font-size:1.05rem;
+  color:white;
+}
+.semaforo-desc {
+  color:#d7e2f3;
+  font-size:.88rem;
+  line-height:1.45;
+  margin-top:.35rem;
+}
+
 </style>
 """,
     unsafe_allow_html=True,
@@ -413,18 +452,18 @@ def classify_signal(row: pd.Series) -> tuple[str, str, str]:
     if pd.notna(row.get("SMA20")) and pd.notna(row.get("SMA50")):
         if row["SMA20"] > row["SMA50"]:
             score += 1
-            reasons.append("media 20 sobre media 50")
+            reasons.append("tendencia corta favorable")
         else:
             score -= 1
-            reasons.append("media 20 bajo media 50")
+            reasons.append("tendencia corta débil")
 
     if pd.notna(row.get("SMA50")) and pd.notna(row.get("SMA200")):
         if row["SMA50"] > row["SMA200"]:
             score += 1
-            reasons.append("estructura de mediano plazo favorable")
+            reasons.append("mediano plazo favorable")
         else:
             score -= 1
-            reasons.append("estructura de mediano plazo débil")
+            reasons.append("mediano plazo débil")
 
     rsi = row.get("RSI14")
     if pd.notna(rsi):
@@ -433,9 +472,9 @@ def classify_signal(row: pd.Series) -> tuple[str, str, str]:
             reasons.append("RSI en zona sana")
         elif rsi > 72:
             score -= 1
-            reasons.append("RSI sobrecomprado")
+            reasons.append("RSI alto / posible sobrecompra")
         elif rsi < 35:
-            reasons.append("RSI castigado")
+            reasons.append("RSI castigado / posible rebote, con cautela")
 
     ret20 = row.get("Retorno 20D")
     if pd.notna(ret20):
@@ -446,11 +485,25 @@ def classify_signal(row: pd.Series) -> tuple[str, str, str]:
             score -= 1
             reasons.append("momentum 20D negativo")
 
+    vol = row.get("Volatilidad 20D")
+    if pd.notna(vol) and vol > 0.45:
+        score -= 1
+        reasons.append("volatilidad elevada")
+
     if score >= 3:
-        return "ALZA", "alza", " · ".join(reasons)
+        return "ALZA", "alza", "🟢 Favorable: merece revisión prioritaria, pero no implica compra automática. " + " · ".join(reasons)
     if score <= -2:
-        return "RIESGO", "riesgo", " · ".join(reasons)
-    return "VIGILAR", "vigilar", " · ".join(reasons)
+        return "RIESGO", "riesgo", "🔴 Riesgo: presenta debilidad o volatilidad relevante; revisar con cautela. " + " · ".join(reasons)
+    return "VIGILAR", "vigilar", "🟡 Vigilar: señal mixta; conviene esperar confirmación. " + " · ".join(reasons)
+
+def semaforo_text(signal: str) -> str:
+    if signal == "ALZA":
+        return "🟢 Favorable"
+    if signal == "RIESGO":
+        return "🔴 Riesgo"
+    if signal == "VIGILAR":
+        return "🟡 Vigilar"
+    return "⚪ Sin datos"
 
 
 def fmt_money(value: float) -> str:
@@ -579,10 +632,7 @@ def style_return(value: float) -> str:
 
 
 def render_table_html(df: pd.DataFrame) -> None:
-    """Render estable del radar usando tabla nativa de Streamlit.
-
-    Evita que Streamlit muestre HTML crudo como texto en la app publicada.
-    """
+    """Tabla estable del radar usando componentes nativos de Streamlit."""
     required_cols = [
         "Activo", "Ticker", "Empresa", "Precio", "Retorno 20D",
         "RSI 14", "Volatilidad 20D", "Señal", "Lectura"
@@ -599,22 +649,25 @@ def render_table_html(df: pd.DataFrame) -> None:
         return
 
     view = df.copy()
-
+    view["Semáforo"] = view["Señal"].apply(semaforo_text)
     view["Activo"] = view["Activo"].astype(str) + " · " + view["Ticker"].astype(str)
     view["Precio"] = view["Precio"].apply(fmt_money)
     view["20D"] = view["Retorno 20D"].apply(fmt_pct)
+    view["60D"] = view["Retorno 60D"].apply(fmt_pct)
     view["RSI"] = view["RSI 14"].apply(fmt_num)
     view["Volatilidad"] = view["Volatilidad 20D"].apply(fmt_pct)
+    view["Interpretación"] = view["Lectura"]
 
     view = view[[
+        "Semáforo",
         "Activo",
         "Empresa",
         "Precio",
         "20D",
+        "60D",
         "RSI",
         "Volatilidad",
-        "Señal",
-        "Lectura",
+        "Interpretación",
     ]]
 
     st.dataframe(
@@ -622,14 +675,15 @@ def render_table_html(df: pd.DataFrame) -> None:
         use_container_width=True,
         hide_index=True,
         column_config={
+            "Semáforo": st.column_config.TextColumn("Semáforo", width="small"),
             "Activo": st.column_config.TextColumn("Activo", width="medium"),
-            "Empresa": st.column_config.TextColumn("Empresa", width="large"),
+            "Empresa": st.column_config.TextColumn("Empresa", width="medium"),
             "Precio": st.column_config.TextColumn("Precio", width="small"),
             "20D": st.column_config.TextColumn("20D", width="small"),
+            "60D": st.column_config.TextColumn("60D", width="small"),
             "RSI": st.column_config.TextColumn("RSI", width="small"),
             "Volatilidad": st.column_config.TextColumn("Volatilidad", width="small"),
-            "Señal": st.column_config.TextColumn("Señal", width="small"),
-            "Lectura": st.column_config.TextColumn("Lectura", width="large"),
+            "Interpretación": st.column_config.TextColumn("Interpretación", width="large"),
         },
     )
 
@@ -709,6 +763,36 @@ period = nav_cols[6].selectbox(
 
 with st.spinner("Cargando datos reales de mercado..."):
     asset_df = build_asset_table(DEFAULT_ASSETS, period=period)
+
+
+
+def render_semaforo_summary(df: pd.DataFrame) -> None:
+    if df.empty or "Señal" not in df.columns:
+        return
+
+    alza = int((df["Señal"] == "ALZA").sum())
+    vigilar = int((df["Señal"] == "VIGILAR").sum())
+    riesgo = int((df["Señal"] == "RIESGO").sum())
+    sin_datos = int((df["Señal"] == "SIN DATOS").sum())
+
+    c1, c2, c3, c4 = st.columns(4)
+    cards = [
+        (c1, "🟢 Favorable", alza, "Tendencia/momentum más constructivo. Revisar con prioridad, no comprar automáticamente."),
+        (c2, "🟡 Vigilar", vigilar, "Lectura mixta. Esperar confirmación o revisar más antecedentes."),
+        (c3, "🔴 Riesgo", riesgo, "Debilidad, presión bajista o volatilidad relevante. Actuar con cautela."),
+        (c4, "⚪ Sin datos", sin_datos, "Yahoo Finance no entregó información suficiente para calcular el radar."),
+    ]
+    for col, title, value, desc in cards:
+        with col:
+            st.markdown(
+                f"""
+<div class="semaforo-card">
+  <div class="semaforo-title">{title}: {value}</div>
+  <div class="semaforo-desc">{desc}</div>
+</div>
+""",
+                unsafe_allow_html=True,
+            )
 
 
 # =========================================================
@@ -841,6 +925,8 @@ No es una recomendación de inversión ni garantiza resultados futuros.
         unsafe_allow_html=True,
     )
 
+    render_semaforo_summary(asset_df)
+    st.markdown("")
     search = st.text_input("Buscar activo", placeholder="Ej: SQM, COPEC, CHILE, CENCOSUD...")
     filtered = asset_df.copy()
     if search:
