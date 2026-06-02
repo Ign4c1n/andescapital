@@ -485,6 +485,88 @@ div[data-testid="stMetricLabel"] { color:#d9e4f5; }
   .market-card-grid { grid-template-columns:1fr; }
 }
 
+
+.ad-layout {
+  display:grid;
+  grid-template-columns:180px minmax(0, 1fr) 180px;
+  gap:1rem;
+  align-items:start;
+}
+.ad-column {
+  position:sticky;
+  top:1rem;
+  display:flex;
+  flex-direction:column;
+  gap:1rem;
+}
+.ad-banner {
+  min-height:250px;
+  border:1px dashed rgba(216,40,53,.50);
+  background:
+    linear-gradient(180deg, rgba(9,46,91,.68), rgba(7,35,70,.55)),
+    radial-gradient(circle at 70% 0%, rgba(216,40,53,.13), transparent 38%);
+  border-radius:14px;
+  padding:1rem;
+  display:flex;
+  flex-direction:column;
+  justify-content:space-between;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.04), 0 18px 45px rgba(0,0,0,.14);
+}
+.ad-banner.horizontal {
+  min-height:96px;
+  margin:1rem 0;
+}
+.ad-label {
+  color:#ffb8bf;
+  font-size:.68rem;
+  text-transform:uppercase;
+  letter-spacing:.13em;
+  font-weight:900;
+}
+.ad-title {
+  color:white;
+  font-size:1.05rem;
+  font-weight:900;
+  line-height:1.18;
+  margin:.8rem 0 .35rem 0;
+}
+.ad-text {
+  color:#cfdcf0;
+  font-size:.82rem;
+  line-height:1.42;
+}
+.ad-cta {
+  margin-top:1rem;
+  border:1px solid rgba(255,255,255,.18);
+  border-radius:8px;
+  color:white;
+  padding:.55rem .65rem;
+  font-size:.75rem;
+  font-weight:850;
+  text-align:center;
+  background:rgba(216,40,53,.14);
+}
+@media(max-width:1250px) {
+  .ad-layout {
+    grid-template-columns:1fr;
+  }
+  .ad-column {
+    position:relative;
+    top:auto;
+    display:grid;
+    grid-template-columns:repeat(2, minmax(0,1fr));
+    order:2;
+  }
+  .ad-main {
+    order:1;
+  }
+}
+@media(max-width:720px) {
+  .ad-column {
+    grid-template-columns:1fr;
+  }
+}
+
 </style>
 """,
     unsafe_allow_html=True,
@@ -1090,6 +1172,54 @@ def render_semaforo_summary(df: pd.DataFrame) -> None:
             )
 
 
+
+def render_ad_banner(title: str, text: str, cta: str = "Espacio disponible", horizontal: bool = False):
+    extra = " horizontal" if horizontal else ""
+    st.markdown(
+        f"""
+<div class="ad-banner{extra}">
+  <div>
+    <div class="ad-label">Patrocinado</div>
+    <div class="ad-title">{title}</div>
+    <div class="ad-text">{text}</div>
+  </div>
+  <div class="ad-cta">{cta}</div>
+</div>
+""",
+        unsafe_allow_html=True,
+    )
+
+
+def render_left_ads():
+    st.markdown('<div class="ad-column">', unsafe_allow_html=True)
+    render_ad_banner(
+        "Broker / Corredora",
+        "Espacio para partner financiero, apertura de cuenta o contenido educativo.",
+        "Banner lateral 180×250"
+    )
+    render_ad_banner(
+        "Curso de inversiones",
+        "Promoción para diplomados, clases, mentorías o contenido premium.",
+        "Reservar espacio"
+    )
+    st.markdown('</div>', unsafe_allow_html=True)
+
+
+def render_right_ads():
+    st.markdown('<div class="ad-column">', unsafe_allow_html=True)
+    render_ad_banner(
+        "Reporte premium",
+        "Espacio para informe semanal, newsletter o suscripción de análisis.",
+        "Ver propuesta"
+    )
+    render_ad_banner(
+        "Marca asociada",
+        "Banner para bancos, fintech, contabilidad, seguros o herramientas de datos.",
+        "Banner lateral 180×250"
+    )
+    st.markdown('</div>', unsafe_allow_html=True)
+
+
 # =========================================================
 # PAGES
 # =========================================================
@@ -1482,15 +1612,32 @@ conviene validar contra la fuente oficial correspondiente antes de tomar decisio
 
 page = st.session_state.page
 
-if page == "Radar":
-    page_radar()
-elif page == "Radar de activos":
-    page_radar_activos()
-elif page == "Señales":
-    page_senales()
-elif page == "Portafolio":
-    page_portafolio()
-elif page == "Mercado":
-    page_mercado()
-else:
-    page_radar()
+left_ad_col, main_content_col, right_ad_col = st.columns([0.72, 4.6, 0.72], gap="medium")
+
+with left_ad_col:
+    render_left_ads()
+
+with main_content_col:
+    if page == "Radar":
+        page_radar()
+    elif page == "Radar de activos":
+        page_radar_activos()
+    elif page == "Señales":
+        page_senales()
+    elif page == "Portafolio":
+        page_portafolio()
+    elif page == "Mercado":
+        page_mercado()
+    else:
+        page_radar()
+
+with right_ad_col:
+    render_right_ads()
+
+# Banner inferior transversal
+render_ad_banner(
+    "Espacio publicitario horizontal",
+    "Formato ideal para campañas de marca, newsletters, cursos o alianzas estratégicas de Andes Capital.",
+    "Banner 970×90",
+    horizontal=True,
+)
